@@ -53,6 +53,10 @@ class _SignalementSheetState extends ConsumerState<_SignalementSheet> {
     _speech = stt.SpeechToText();
     _speech.initialize().then((available) {
       if (mounted) setState(() => _speechAvailable = available);
+    }).catchError((_) {
+      // Reconnaissance vocale indisponible sur cet appareil (ex. poste
+      // Windows sans service de dictée configuré) : on reste sans dictée.
+      if (mounted) setState(() => _speechAvailable = false);
     });
   }
 

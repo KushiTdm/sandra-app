@@ -128,6 +128,10 @@ flutter_launcher_icons:
   adaptive_icon_background: "#FAF8F4"
   adaptive_icon_foreground: assets/branding/lfay_icon_foreground.png
   min_sdk_android: 21
+  windows:
+    generate: true
+    image_path: assets/branding/lfay_logo.png
+    icon_size: 256
 
 # Écran de lancement natif (affiché avant que Flutter ne prenne la main) —
 # logo LFAY sur fond crème, identique à la palette de l'app (app_colors.dart).
