@@ -24,10 +24,29 @@ enum _Step { configuration, contexte, questions, squelette, jours, termine }
 /// cours de route : tout l'état vit dans `generation_requests`, jamais
 /// seulement dans le téléphone.
 class GenerationScreen extends ConsumerStatefulWidget {
-  const GenerationScreen({super.key, required this.classId, this.resumeRequestId});
+  const GenerationScreen({
+    super.key,
+    required this.classId,
+    this.resumeRequestId,
+    this.initialScope,
+    this.initialDateFrom,
+    this.onRequestCreated,
+  });
 
   final String classId;
   final String? resumeRequestId;
+
+  /// Pré-remplissage de l'étape de configuration (§10, bilan de semaine :
+  /// lancée directement sur "semaine" / lundi suivant plutôt que de faire
+  /// rechoisir ce que l'écran appelant sait déjà). Sans effet si
+  /// [resumeRequestId] est fourni — la reprise a priorité.
+  final String? initialScope;
+  final DateTime? initialDateFrom;
+
+  /// Appelé dès que `generation_requests` est créée (§10) — pour qu'un écran
+  /// appelant (bilan de semaine) puisse relier cette génération à autre
+  /// chose sans dupliquer la logique de création ici.
+  final ValueChanged<String>? onRequestCreated;
 
   @override
   ConsumerState<GenerationScreen> createState() => _GenerationScreenState();
@@ -37,8 +56,8 @@ class _GenerationScreenState extends ConsumerState<GenerationScreen> {
   _Step _step = _Step.configuration;
 
   // Configuration
-  String _scope = 'jour';
-  DateTime _dateFrom = _nextWeekday(DateTime.now());
+  late String _scope = widget.initialScope ?? 'jour';
+  late DateTime _dateFrom = widget.initialDateFrom ?? _nextWeekday(DateTime.now());
   bool _regenerateExisting = false;
 
   // État de la demande en cours
@@ -159,6 +178,7 @@ class _GenerationScreenState extends ConsumerState<GenerationScreen> {
         contextPack: _contextPack!,
       );
       _request = req;
+      widget.onRequestCreated?.call(req.id);
       // Transmise à l'IA dès la phase « questions » : une indication du type
       // « sortie jeudi après-midi » évite qu'elle pose une question dont
       // Sandra a déjà donné la réponse.

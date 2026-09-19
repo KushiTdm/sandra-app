@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../core/supabase/supabase_bootstrap.dart';
 import '../edt/edt_screen.dart';
 import 'ai_preferences_screen.dart';
+import 'commentaires_screen.dart';
+import 'import_journal_screen.dart';
 
 class ReglagesScreen extends StatelessWidget {
   const ReglagesScreen({super.key});
@@ -41,6 +43,22 @@ class ReglagesScreen extends StatelessWidget {
             subtitle: const Text('Ce que l\'IA a retenu de vos réponses au wizard'),
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const AiPreferencesScreen()),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.camera_alt_outlined),
+            title: const Text('Importer une page du cahier journal'),
+            subtitle: const Text('Depuis une photo, ou un JSON obtenu ailleurs'),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const ImportJournalScreen()),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.chat_bubble_outline),
+            title: const Text('Commentaires sur l\'application'),
+            subtitle: const Text('Remarques, idées, bugs à signaler'),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const CommentairesScreen()),
             ),
           ),
           const Divider(),

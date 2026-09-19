@@ -1,13 +1,16 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/result/result.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../data/repositories/exercises_repository.dart';
+import '../../../data/repositories/import_repository.dart';
 import '../journal_providers.dart';
 import '../reject_feedback_dialog.dart';
 import 'exercices_providers.dart';
@@ -48,6 +51,24 @@ Future<void> showExercicesForDomainSheet(BuildContext context) {
   );
 }
 
+/// Corrige une fiche déjà validée à partir d'une photo (§8.4, annotations
+/// manuscrites de Sandra sur la fiche imprimée) : l'Edge Function retrouve
+/// elle-même la séance/matière d'origine à partir de `sheet.id`, la photo
+/// choisie ici est jointe automatiquement dès l'ouverture de la feuille.
+Future<void> showExercicePhotoUpdateSheet(BuildContext context, {required ExerciseSheet sheet}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (context) => _ExercicesSheet(
+      entryId: sheet.entryId,
+      seanceLabel: sheet.entryId != null ? sheet.title : null,
+      seanceDate: sheet.date,
+      updateSheetId: sheet.id,
+    ),
+  );
+}
+
 enum _Phase { demande, generation, rateLimited, validationFailed, error, relecture }
 
 /// Durées proposées : une fiche occupe une partie du créneau, pas tout —
@@ -59,7 +80,10 @@ class _ExercicesSheet extends ConsumerStatefulWidget {
   /// matière est fixée par la séance. Mode matière : les trois sont `null`,
   /// un sélecteur de domaine apparaît dans l'écran de demande et le jour visé
   /// démarre sur aujourd'hui (modifiable avant l'enregistrement).
-  const _ExercicesSheet({this.entryId, this.seanceLabel, this.seanceDate})
+  /// `updateSheetId` (§8.4) : corrige cette fiche déjà validée plutôt que
+  /// d'en proposer une nouvelle indépendante — l'Edge Function retrouve
+  /// elle-même son contexte d'origine à partir de son id.
+  const _ExercicesSheet({this.entryId, this.seanceLabel, this.seanceDate, this.updateSheetId})
       : assert(
           (entryId == null) == (seanceLabel == null),
           'entryId et seanceLabel vont ensemble ou pas du tout.',
@@ -68,6 +92,7 @@ class _ExercicesSheet extends ConsumerStatefulWidget {
   final String? entryId;
   final String? seanceLabel;
   final DateTime? seanceDate;
+  final String? updateSheetId;
 
   bool get isDomainMode => entryId == null;
 
@@ -89,6 +114,10 @@ class _ExercicesSheetState extends ConsumerState<_ExercicesSheet> {
   String? _propositionId;
   Map<String, dynamic>? _payload;
   bool _applying = false;
+  File? _photo;
+  bool _uploadingPhoto = false;
+
+  bool get _isUpdate => widget.updateSheetId != null;
 
   /// Jour visé et séance liée au moment d'enregistrer (Sandra, 16 septembre
   /// 2026 : générer un exercice puis l'enregistrer pour le lendemain, ou le
@@ -109,7 +138,13 @@ class _ExercicesSheetState extends ConsumerState<_ExercicesSheet> {
       ? (_selectedDomainLabel ?? 'Choisissez une matière')
       : widget.seanceLabel!;
 
-  bool get _canGenerate => widget.isDomainMode ? _selectedDomainCode != null : true;
+  bool get _canGenerate =>
+      (widget.isDomainMode && !_isUpdate) ? _selectedDomainCode != null : true;
+
+  Future<void> _pickPhoto(ImageSource source) async {
+    final picked = await ImagePicker().pickImage(source: source, imageQuality: 90);
+    if (picked != null) setState(() => _photo = File(picked.path));
+  }
 
   Future<void> _generate() async {
     setState(() {
@@ -117,11 +152,25 @@ class _ExercicesSheetState extends ConsumerState<_ExercicesSheet> {
       _errorMessage = null;
     });
     try {
+      String? photoStoragePath;
+      if (_photo != null) {
+        setState(() => _uploadingPhoto = true);
+        final classId = await ref.read(journalClassIdProvider.future);
+        photoStoragePath = await ref.read(importRepositoryProvider).uploadPhoto(
+              classId: classId,
+              category: 'exercices',
+              file: _photo!,
+            );
+        if (!mounted) return;
+        setState(() => _uploadingPhoto = false);
+      }
       final outcome = await ref.read(exercisesRepositoryProvider).generate(
-            entryId: widget.entryId,
-            domainCode: widget.isDomainMode ? _selectedDomainCode : null,
+            entryId: _isUpdate ? null : widget.entryId,
+            domainCode: (_isUpdate || !widget.isDomainMode) ? null : _selectedDomainCode,
             consigneLibre: _consigneController.text,
             dureeMin: _duree,
+            sheetId: widget.updateSheetId,
+            photoStoragePath: photoStoragePath,
           );
       if (!mounted) return;
       switch (outcome) {
@@ -146,12 +195,14 @@ class _ExercicesSheetState extends ConsumerState<_ExercicesSheet> {
       setState(() {
         _phase = _Phase.error;
         _errorMessage = e.message;
+        _uploadingPhoto = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _phase = _Phase.error;
         _errorMessage = e.toString();
+        _uploadingPhoto = false;
       });
     }
   }
@@ -290,13 +341,17 @@ class _ExercicesSheetState extends ConsumerState<_ExercicesSheet> {
             ],
             const SizedBox(height: 16),
             Text(
-              'La fiche sera générée en deux versions du même travail : une avec '
-              'aides pour les élèves qui en ont besoin, une en autonomie. Rien '
-              'n\'est enregistré avant que vous ne validiez.',
+              _isUpdate
+                  ? 'Une nouvelle version de cette fiche sera proposée, en partant '
+                      'de son contenu actuel. Rien n\'est enregistré avant que vous '
+                      'ne validiez.'
+                  : 'La fiche sera générée en deux versions du même travail : une avec '
+                      'aides pour les élèves qui en ont besoin, une en autonomie. Rien '
+                      'n\'est enregistré avant que vous ne validiez.',
               style: theme.textTheme.bodySmall,
             ),
             const SizedBox(height: 16),
-            if (widget.isDomainMode) ...[
+            if (widget.isDomainMode && !_isUpdate) ...[
               _DomainPicker(
                 selectedCode: _selectedDomainCode,
                 onSelected: (code, label) => setState(() {
@@ -306,6 +361,35 @@ class _ExercicesSheetState extends ConsumerState<_ExercicesSheet> {
               ),
               const SizedBox(height: 16),
             ],
+            Row(
+              children: [
+                Icon(
+                  _photo != null ? Icons.check_circle : Icons.camera_alt_outlined,
+                  size: 18,
+                  color: _photo != null ? AppColors.masteryAcquis : null,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _photo != null
+                        ? 'Photo jointe'
+                        : (_isUpdate ? 'Joindre une photo des annotations' : 'Joindre une photo (facultatif)'),
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => _pickPhoto(ImageSource.camera),
+                  child: Text(_photo != null ? 'Reprendre' : 'Photo'),
+                ),
+                if (_photo != null)
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 18),
+                    tooltip: 'Retirer la photo',
+                    onPressed: () => setState(() => _photo = null),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
             TextField(
               controller: _consigneController,
               maxLines: 3,
@@ -354,13 +438,13 @@ class _ExercicesSheetState extends ConsumerState<_ExercicesSheet> {
         );
 
       case _Phase.generation:
-        return const _Centered(
+        return _Centered(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('L\'IA prépare les deux niveaux…'),
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              Text(_uploadingPhoto ? 'Envoi de la photo…' : 'L\'IA prépare les deux niveaux…'),
             ],
           ),
         );

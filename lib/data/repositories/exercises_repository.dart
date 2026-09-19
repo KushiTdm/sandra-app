@@ -184,15 +184,22 @@ class ExercisesRepository {
   /// `domainCode` génère une fiche autonome pour une matière choisie
   /// directement, sans passer par une séance déjà saisie — exactement l'un
   /// ou l'autre, jamais les deux (l'Edge Function les refuse ensemble).
+  /// `sheetId` corrige une fiche déjà validée (§8.4, photo d'annotations) :
+  /// l'Edge Function retrouve alors elle-même la séance/matière d'origine,
+  /// `entryId`/`domainCode` sont ignorés. `photoStoragePath` (import photo,
+  /// même bucket que import-journal) s'ajoute à `consigneLibre` côté serveur,
+  /// que la fiche soit nouvelle ou corrigée.
   Future<GenerateExercisesOutcome> generate({
     String? entryId,
     String? domainCode,
     String? consigneLibre,
     int? dureeMin,
+    String? sheetId,
+    String? photoStoragePath,
   }) async {
     assert(
-      (entryId == null) != (domainCode == null),
-      'generate() attend soit entryId, soit domainCode — pas les deux, pas aucun.',
+      sheetId != null || (entryId == null) != (domainCode == null),
+      'generate() attend soit entryId, soit domainCode — pas les deux, pas aucun (sauf correction par sheetId).',
     );
     try {
       final res = await _client.functions.invoke('generate-exercises', body: {
@@ -201,6 +208,8 @@ class ExercisesRepository {
         if (consigneLibre != null && consigneLibre.trim().isNotEmpty)
           'consigne_libre': consigneLibre.trim(),
         'duree_min': ?dureeMin,
+        'sheet_id': ?sheetId,
+        'photo_storage_path': ?photoStoragePath,
       });
       final data = res.data as Map<String, dynamic>;
       return ExercisesGenerated(

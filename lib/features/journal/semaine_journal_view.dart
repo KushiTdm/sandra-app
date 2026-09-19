@@ -3,7 +3,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/theme/app_colors.dart';
+import 'bilan_semaine/weekly_review_screen.dart';
 import 'journal_providers.dart';
+
+/// Un bilan de semaine n'a de sens qu'une fois le bilan du soir du vendredi
+/// enregistré (§10) — c'est ce que ce provider vérifie, pour n'afficher le
+/// bouton "Bilan de la semaine" qu'à ce moment-là.
+final _fridayReviewDoneProvider =
+    FutureProvider.autoDispose.family<bool, DateTime>((ref, weekStart) async {
+  final classId = await ref.watch(journalClassIdProvider.future);
+  final friday = weekStart.add(const Duration(days: 4));
+  return ref.watch(weeklyReviewRepositoryProvider).hasDailyReview(classId: classId, date: friday);
+});
 
 /// Vue Semaine (§8.3) : complétude de chaque jour, glisser vers la semaine
 /// suivante/précédente, tap pour ouvrir la vue Jour correspondante.
@@ -24,6 +35,7 @@ class SemaineJournalView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final weekEnd = weekStart.add(const Duration(days: 4));
+    final fridayReviewDone = ref.watch(_fridayReviewDoneProvider(weekStart)).value ?? false;
 
     return Column(
       children: [
@@ -50,9 +62,24 @@ class SemaineJournalView extends ConsumerWidget {
         Expanded(
           child: ListView(
             padding: const EdgeInsets.all(12),
-            children: List.generate(5, (i) => weekStart.add(Duration(days: i)))
-                .map((date) => _DayRow(date: date, onTap: () => onDaySelected(date)))
-                .toList(),
+            children: [
+              ...List.generate(5, (i) => weekStart.add(Duration(days: i)))
+                  .map((date) => _DayRow(date: date, onTap: () => onDaySelected(date))),
+              if (fridayReviewDone) ...[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final classId = await ref.read(journalClassIdProvider.future);
+                    if (!context.mounted) return;
+                    Navigator.of(context).push(MaterialPageRoute<void>(
+                      builder: (_) => WeeklyReviewScreen(classId: classId, weekStart: weekStart),
+                    ));
+                  },
+                  icon: const Icon(Icons.summarize_outlined),
+                  label: const Text('Bilan de la semaine'),
+                ),
+              ],
+            ],
           ),
         ),
       ],

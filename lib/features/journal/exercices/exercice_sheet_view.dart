@@ -8,6 +8,7 @@ import '../../../core/theme/app_tokens.dart';
 import '../../../data/repositories/exercises_repository.dart';
 import '../../../models/journal_entry.dart';
 import '../journal_providers.dart';
+import 'exercices_generation_sheet.dart';
 import 'exercices_pdf_export.dart';
 import 'exercices_providers.dart';
 
@@ -150,6 +151,17 @@ class _ExerciceSheetViewState extends ConsumerState<_ExerciceSheetView> {
                   label: const Text('Imprimer / partager en PDF'),
                 ),
               ),
+              if (_isSaved) ...[
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => showExercicePhotoUpdateSheet(context, sheet: _sheet),
+                    icon: const Icon(Icons.camera_alt_outlined),
+                    label: const Text('Corriger par photo'),
+                  ),
+                ),
+              ],
               const SizedBox(height: 8),
               Text(
                 'Le PDF contient une page par niveau pour les élèves, puis une '
