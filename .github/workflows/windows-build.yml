@@ -41,14 +41,23 @@ jobs:
 
       - run: flutter build windows --release --dart-define-from-file=env.json
 
-      - name: Prépare le .zip
-        shell: bash
+      - name: Vérifie le build et prépare le .zip
+        shell: pwsh
         run: |
-          set -e
-          release_dir=$(find build/windows -type d -name Release | head -n1)
-          echo "Release dir: $release_dir"
-          mkdir -p dist
-          (cd "$release_dir" && 7z a -r "$OLDPWD/dist/LFAY-CahierJournal-Windows.zip" .)
+          $releaseDir = Get-ChildItem -Path build/windows -Recurse -Directory -Filter Release |
+            Where-Object { $_.FullName -match '\\runner\\Release$' } |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $releaseDir) {
+            Write-Error "Dossier runner/Release introuvable sous build/windows"
+            exit 1
+          }
+          if (-not (Get-ChildItem -Path $releaseDir -Filter *.exe)) {
+            Write-Error "Aucun .exe trouvé dans $releaseDir"
+            exit 1
+          }
+          Write-Host "Release dir: $releaseDir"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path "$releaseDir\*" -DestinationPath dist/LFAY-CahierJournal-Windows.zip -Force
 
       - uses: actions/upload-artifact@v4
         with:
