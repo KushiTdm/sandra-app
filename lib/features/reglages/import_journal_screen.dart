@@ -11,6 +11,7 @@ import '../../core/result/result.dart';
 import '../../core/supabase/supabase_bootstrap.dart';
 import '../../data/repositories/edt_repository.dart';
 import '../../data/repositories/import_repository.dart';
+import '../../data/repositories/journal_repository.dart';
 import '../journal/ai_generation_sheet.dart';
 import '../journal/journal_providers.dart';
 
@@ -136,8 +137,13 @@ class _ImportJournalScreenState extends ConsumerState<ImportJournalScreen> {
   Future<void> _showPrompt() async {
     final classId = await ref.read(journalClassIdProvider.future);
     final domains = await EdtRepository(supabase).knownDomains(classId);
+    final journalRepo = ref.read(journalRepositoryProvider);
+    final notionsByDomain = <String, List<NotionOption>>{};
+    for (final domain in domains) {
+      notionsByDomain[domain.code] = await journalRepo.notionsForDomain(domain.code);
+    }
     if (!mounted) return;
-    final prompt = _externalPrompt(domains);
+    final prompt = _externalPrompt(domains, notionsByDomain);
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -185,11 +191,25 @@ class _ImportJournalScreenState extends ConsumerState<ImportJournalScreen> {
     );
   }
 
-  String _externalPrompt(List<CurriculumDomain> domains) {
+  String _externalPrompt(List<CurriculumDomain> domains, Map<String, List<NotionOption>> notionsByDomain) {
     final codes = domains.map((d) => '${d.code} (${d.label})').join(', ');
+    final notionLines = domains
+        .map((d) {
+          final notions = notionsByDomain[d.code] ?? const [];
+          if (notions.isEmpty) return null;
+          final list = notions.map((n) => '${n.code} : ${n.label}').join(' ; ');
+          return '${d.code} — $list';
+        })
+        .whereType<String>()
+        .join('\n');
     return '''Tu es assistante d'une enseignante de CE1. Voici une photo d'une page de son cahier journal papier. Transforme-la en un tableau JSON de séances, une par plage horaire distincte visible sur la page.
 
 Codes de domaine autorisés (n'en utilise aucun autre) : $codes
+
+Codes de notion autorisés pour "notions", par domaine (n'en utilise aucun autre) :
+$notionLines
+
+Si aucune notion listée ci-dessus ne correspond clairement à ce qui est écrit sur la page, laisse "notions": [] plutôt que de deviner — un mauvais rattachement est pire qu'aucun, Sandra le fera elle-même si besoin.
 
 Réponds UNIQUEMENT avec ce tableau JSON, un objet par séance :
 [
