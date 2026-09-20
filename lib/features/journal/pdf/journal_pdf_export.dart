@@ -45,7 +45,11 @@ Future<void> exportJournalToPdf(
     for (final date in dates) {
       final slots = await ref.read(scheduleForDateProvider(date).future);
       final journal = await ref.read(dayJournalProvider(date).future);
-      final teaching = slots.where((s) => !s.isBreak && s.taughtBy == 'me').toList();
+      // Tous les cours de la journée, y compris ceux assurés par un
+      // intervenant (Anglais, Vietnamien, EPS/Arts) : le cahier journal rend
+      // compte de la journée entière de la classe, pas seulement des séances
+      // rédigées par l'enseignante (Sandra, 21 septembre 2026).
+      final teaching = slots.where((s) => !s.isBreak).toList();
       if (teaching.isNotEmpty || journal.entries.isNotEmpty) {
         dayBlocks.add((date: date, teaching: teaching, entries: journal.entries));
       }
@@ -203,7 +207,8 @@ pw.Widget _emptySlotBlock(ScheduleSlot slot) {
         pw.SizedBox(height: 2),
         pw.Text(slot.subjectLabel,
             style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold, color: PdfColors.grey600)),
-        pw.Text('(pas encore saisi)',
+        pw.Text(
+            slot.taughtBy == 'me' ? '(pas encore saisi)' : '(assuré par un intervenant)',
             style: pw.TextStyle(fontSize: 9, fontStyle: pw.FontStyle.italic, color: PdfColors.grey500)),
       ],
     ),

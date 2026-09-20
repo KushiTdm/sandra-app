@@ -119,11 +119,10 @@ class _ScheduleAndEntries extends ConsumerWidget {
         final teachingSlots = slots
             .where((s) => !s.isBreak && s.taughtBy == 'me')
             .toList();
-        // Créneaux tenus par un intervenant (Anglais, Vietnamien, EPS/Arts
-        // avec spécialiste) : Sandra n'a rien à y rédiger, donc pas de carte
-        // « à créer », mais ils doivent rester visibles comme repère de
-        // journée au même titre qu'une récréation, sauf si elle a quand même
-        // ajouté une séance libre dessus.
+        // Créneaux tenus par un intervenant (Anglais, Vietnamien, EPS/Arts) :
+        // affichés comme les autres, avec leurs horaires, pour que la journée
+        // soit complète — seule la génération IA n'a pas de sens dessus
+        // (build_lesson_context la refuse côté serveur).
         final specialistSlots = slots
             .where((s) => !s.isBreak && s.taughtBy != 'me')
             .toList();
@@ -147,7 +146,7 @@ class _ScheduleAndEntries extends ConsumerWidget {
           for (final s in teachingSlots)
             if (!coveredByEntry(s)) _EmptySlotItem(s),
           for (final s in specialistSlots)
-            if (!coveredByEntry(s)) _BreakItem(s),
+            if (!coveredByEntry(s)) _EmptySlotItem(s),
           for (final s in slots.where((s) => s.isBreak)) _BreakItem(s),
         ]..sort((a, b) => a.sortKey.compareTo(b.sortKey));
 
@@ -210,7 +209,7 @@ class _ScheduleAndEntries extends ConsumerWidget {
               domainCode: slot.domainCode,
               groupLabel: slot.groupLabel,
             ),
-            onGenerate: slot.domainCode == null
+            onGenerate: slot.domainCode == null || slot.taughtBy != 'me'
                 ? null
                 : () => showAiGenerationSheet(
                     context,
@@ -502,7 +501,9 @@ class _EmptySlotCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Appuyer pour créer',
+                      slot.taughtBy == 'me'
+                          ? 'Appuyer pour créer'
+                          : 'Assuré par un intervenant — appuyer pour noter',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).colorScheme.outline,
                       ),
@@ -630,14 +631,6 @@ class _BreakRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final isLunch = slot.subjectLabel.toLowerCase().contains('déjeuner');
-    final icon = isLunch
-        ? Icons.restaurant_outlined
-        : slot.isBreak
-        ? Icons.sports_soccer_outlined
-        : Icons.groups_outlined;
-    final label = slot.groupLabel == null
-        ? slot.subjectLabel
-        : '${slot.subjectLabel} (groupe ${slot.groupLabel})';
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
@@ -653,10 +646,14 @@ class _BreakRow extends StatelessWidget {
               ),
             ),
           ),
-          Icon(icon, size: 14, color: scheme.outline),
+          Icon(
+            isLunch ? Icons.restaurant_outlined : Icons.sports_soccer_outlined,
+            size: 14,
+            color: scheme.outline,
+          ),
           const SizedBox(width: 6),
           Text(
-            label,
+            slot.subjectLabel,
             style: TextStyle(fontSize: 12, color: scheme.outline),
           ),
           const SizedBox(width: 8),

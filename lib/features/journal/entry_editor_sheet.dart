@@ -348,7 +348,7 @@ class _EntryEditorSheetState extends ConsumerState<_EntryEditorSheet> {
             ),
             if (widget.domainCode != null) ...[
               const SizedBox(height: 16),
-              Text('Notions travaillées (${widget.domainCode})', style: Theme.of(context).textTheme.labelLarge),
+              Text('Notions travaillées', style: Theme.of(context).textTheme.labelLarge),
               const SizedBox(height: 4),
               if (_loadingNotions)
                 const Padding(
@@ -356,25 +356,26 @@ class _EntryEditorSheetState extends ConsumerState<_EntryEditorSheet> {
                   child: LinearProgressIndicator(),
                 )
               else if (_availableNotions.isEmpty)
-                const Text('Aucune notion connue pour ce domaine.')
+                const Text('Aucune notion connue pour cette matière.')
               else
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: _availableNotions
-                      .map((n) => FilterChip(
-                            label: Text(n.code),
-                            selected: _selectedNotions.contains(n.code),
-                            onSelected: (selected) => setState(() {
-                              if (selected) {
-                                _selectedNotions.add(n.code);
-                              } else {
-                                _selectedNotions.remove(n.code);
-                              }
-                            }),
-                          ))
-                      .toList(),
-                ),
+                // Libellé complet et cases à cocher plutôt que des puces
+                // portant le code du référentiel : les codes (FR.GRA.01…) ne
+                // veulent rien dire pour l'enseignante, et les intitulés sont
+                // trop longs pour tenir dans une puce.
+                ..._availableNotions.map((n) => CheckboxListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      title: Text(n.label, style: Theme.of(context).textTheme.bodyMedium),
+                      value: _selectedNotions.contains(n.code),
+                      onChanged: (selected) => setState(() {
+                        if (selected ?? false) {
+                          _selectedNotions.add(n.code);
+                        } else {
+                          _selectedNotions.remove(n.code);
+                        }
+                      }),
+                    )),
             ],
             const SizedBox(height: 16),
             Text('Statut', style: Theme.of(context).textTheme.labelLarge),

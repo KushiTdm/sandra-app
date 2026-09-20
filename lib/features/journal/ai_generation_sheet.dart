@@ -14,18 +14,40 @@ final aiRepositoryProvider = Provider<AiRepository>((ref) => AiRepository(supaba
 /// Génère une séance IA pour un créneau vide (§8.1, §9.1-9.3), avec le
 /// compte à rebours du limiteur de débit (§9.7) et la boîte de validation
 /// avant toute écriture réelle (R1).
+/// Demande d'abord ses indications à Sandra (où elle en est, ce qu'elle veut
+/// travailler) : sans elles, l'IA repart du référentiel brut et propose
+/// régulièrement une notion hors progression. Auparavant la génération
+/// partait seule dès l'ouverture et le seul moyen de préciser quoi que ce
+/// soit était de valider la proposition puis de demander une correction
+/// (Sandra, 21 septembre 2026).
 Future<void> showAiGenerationSheet(
   BuildContext context, {
   required String slotId,
   required DateTime date,
-}) {
+}) async {
+  final consigne = await showDialog<String>(
+    context: context,
+    builder: (context) => const _InstructionDialog(
+      title: 'Préparer cette séance avec l\'IA',
+      hint: 'Ex. : on en est à reconnaître passé/présent/futur, '
+          'pas encore la conjugaison des verbes en -er.',
+      submitLabel: 'Générer',
+      allowSkip: true,
+    ),
+  );
+  if (consigne == null || !context.mounted) return;
+
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
     builder: (context) => _AiGenerationSheet(
       date: date,
-      generate: (ref) => ref.read(aiRepositoryProvider).generateLesson(slotId: slotId, date: date),
+      generate: (ref) => ref.read(aiRepositoryProvider).generateLesson(
+            slotId: slotId,
+            date: date,
+            consigneLibre: consigne.trim().isEmpty ? null : consigne.trim(),
+          ),
     ),
   );
 }
@@ -42,7 +64,12 @@ Future<void> showAiCorrectionSheet(
 }) async {
   final instruction = await showDialog<String>(
     context: context,
-    builder: (context) => const _CorrectionInstructionDialog(),
+    builder: (context) => const _InstructionDialog(
+      title: 'Demander une correction à l\'IA',
+      hint: 'Ex. : la différenciation n\'est pas assez précise, revois-la.',
+      submitLabel: 'Envoyer',
+      allowSkip: false,
+    ),
   );
   if (instruction == null || instruction.trim().isEmpty) return;
   if (!context.mounted) return;
@@ -61,14 +88,27 @@ Future<void> showAiCorrectionSheet(
   );
 }
 
-class _CorrectionInstructionDialog extends StatefulWidget {
-  const _CorrectionInstructionDialog();
+/// Saisie des indications envoyées à l'IA. Renvoie `null` si Sandra annule,
+/// la chaîne vide si elle choisit de lancer sans rien préciser
+/// ([allowSkip]), sinon son texte.
+class _InstructionDialog extends StatefulWidget {
+  const _InstructionDialog({
+    required this.title,
+    required this.hint,
+    required this.submitLabel,
+    required this.allowSkip,
+  });
+
+  final String title;
+  final String hint;
+  final String submitLabel;
+  final bool allowSkip;
 
   @override
-  State<_CorrectionInstructionDialog> createState() => _CorrectionInstructionDialogState();
+  State<_InstructionDialog> createState() => _InstructionDialogState();
 }
 
-class _CorrectionInstructionDialogState extends State<_CorrectionInstructionDialog> {
+class _InstructionDialogState extends State<_InstructionDialog> {
   final _controller = TextEditingController();
 
   @override
@@ -80,21 +120,24 @@ class _CorrectionInstructionDialogState extends State<_CorrectionInstructionDial
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Demander une correction à l\'IA'),
+      title: Text(widget.title),
       content: TextField(
         controller: _controller,
         autofocus: true,
-        maxLines: 3,
-        decoration: const InputDecoration(
-          hintText: 'Ex. : la différenciation n\'est pas assez précise, revois-la.',
-        ),
+        maxLines: 4,
+        decoration: InputDecoration(hintText: widget.hint),
         onSubmitted: (v) => Navigator.of(context).pop(v),
       ),
       actions: [
         TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Annuler')),
+        if (widget.allowSkip)
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(''),
+            child: const Text('Sans précision'),
+          ),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(_controller.text),
-          child: const Text('Envoyer'),
+          child: Text(widget.submitLabel),
         ),
       ],
     );

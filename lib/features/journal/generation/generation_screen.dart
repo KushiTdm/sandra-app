@@ -16,6 +16,11 @@ const _questionTypeLabels = {
   'texte_court': 'Réponse libre', 'eleves': 'Élève(s)', 'notions': 'Notion(s)', 'echelle': 'Échelle',
 };
 
+const _intentLabels = {
+  'decouverte': 'découverte', 'entrainement': 'entraînement',
+  'reinvestissement': 'réinvestissement', 'evaluation': 'évaluation',
+};
+
 enum _Step { configuration, contexte, questions, squelette, jours, termine }
 
 /// Génération du cahier journal par l'IA, jour ou semaine (§9.5-9.9). Le
@@ -777,8 +782,23 @@ class _GenerationScreenState extends ConsumerState<GenerationScreen> {
     );
   }
 
+  /// Intitulés du référentiel indexés par code : l'écran ne montre jamais un
+  /// code brut (FR.GRA.01…), qui ne veut rien dire pour l'enseignante.
+  Map<String, String> get _notionLabels => {
+        for (final n in (_contextPack?['position_programme'] as List<dynamic>? ?? const [])
+            .cast<Map<String, dynamic>>())
+          n['code'] as String: n['label'] as String,
+      };
+
   Widget _buildSkeletonTile(SkeletonEntry e, FlatSlot slot) {
-    final notionsLabel = e.notions.map((n) => '${n['code']} (${n['intent']})').join(', ');
+    final labels = _notionLabels;
+    final notionsLabel = e.notions
+        .map((n) {
+          final code = n['code'] as String;
+          final intent = _intentLabels[n['intent']] ?? n['intent'];
+          return '${labels[code] ?? code} ($intent)';
+        })
+        .join('\n');
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: ListTile(
