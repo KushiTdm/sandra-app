@@ -119,6 +119,14 @@ class _ScheduleAndEntries extends ConsumerWidget {
         final teachingSlots = slots
             .where((s) => !s.isBreak && s.taughtBy == 'me')
             .toList();
+        // Créneaux tenus par un intervenant (Anglais, Vietnamien, EPS/Arts
+        // avec spécialiste) : Sandra n'a rien à y rédiger, donc pas de carte
+        // « à créer », mais ils doivent rester visibles comme repère de
+        // journée au même titre qu'une récréation, sauf si elle a quand même
+        // ajouté une séance libre dessus.
+        final specialistSlots = slots
+            .where((s) => !s.isBreak && s.taughtBy != 'me')
+            .toList();
 
         if (slots.isEmpty && entries.isEmpty) {
           return const _InfoBanner(
@@ -127,16 +135,19 @@ class _ScheduleAndEntries extends ConsumerWidget {
           );
         }
 
+        bool coveredByEntry(ScheduleSlot s) => entries.any(
+          (e) =>
+              e.startTime != null &&
+              e.endTime != null &&
+              _overlaps(e.startTime!, e.endTime!, s.startTime, s.endTime),
+        );
+
         final sorted = <_TimelineItem>[
           for (final e in entries) _EntryItem(e),
           for (final s in teachingSlots)
-            if (!entries.any(
-              (e) =>
-                  e.startTime != null &&
-                  e.endTime != null &&
-                  _overlaps(e.startTime!, e.endTime!, s.startTime, s.endTime),
-            ))
-              _EmptySlotItem(s),
+            if (!coveredByEntry(s)) _EmptySlotItem(s),
+          for (final s in specialistSlots)
+            if (!coveredByEntry(s)) _BreakItem(s),
           for (final s in slots.where((s) => s.isBreak)) _BreakItem(s),
         ]..sort((a, b) => a.sortKey.compareTo(b.sortKey));
 
@@ -619,6 +630,14 @@ class _BreakRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final isLunch = slot.subjectLabel.toLowerCase().contains('déjeuner');
+    final icon = isLunch
+        ? Icons.restaurant_outlined
+        : slot.isBreak
+        ? Icons.sports_soccer_outlined
+        : Icons.groups_outlined;
+    final label = slot.groupLabel == null
+        ? slot.subjectLabel
+        : '${slot.subjectLabel} (groupe ${slot.groupLabel})';
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
@@ -634,14 +653,10 @@ class _BreakRow extends StatelessWidget {
               ),
             ),
           ),
-          Icon(
-            isLunch ? Icons.restaurant_outlined : Icons.sports_soccer_outlined,
-            size: 14,
-            color: scheme.outline,
-          ),
+          Icon(icon, size: 14, color: scheme.outline),
           const SizedBox(width: 6),
           Text(
-            slot.subjectLabel,
+            label,
             style: TextStyle(fontSize: 12, color: scheme.outline),
           ),
           const SizedBox(width: 8),
