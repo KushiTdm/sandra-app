@@ -4,8 +4,9 @@ part 'journal_entry.freezed.dart';
 part 'journal_entry.g.dart';
 
 /// Reflète `journal_entries` (docs/PLAN_EXECUTION.md §6.4).
-/// `deroulement` (5 phases, séances générées par l'IA) n'existe pas encore en
-/// base (§3.6, écart assumé) : seul `deroulement_steps` est lu pour l'instant.
+/// `deroulement_steps` est ce que l'enseignante voit, modifie et réordonne.
+/// Pour une séance générée par l'IA, il est dérivé des 5 phases (`deroulement`,
+/// jsonb, jamais relu par l'app) au moment de la validation.
 @freezed
 abstract class JournalEntry with _$JournalEntry {
   const factory JournalEntry({

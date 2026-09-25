@@ -77,6 +77,16 @@ class _EntryEditorSheet extends ConsumerStatefulWidget {
   ConsumerState<_EntryEditorSheet> createState() => _EntryEditorSheetState();
 }
 
+/// Une étape du déroulement : son propre champ de texte et une clé stable, pour
+/// que la liste puisse être réordonnée sans que les textes en cours de saisie
+/// changent de place (deux étapes peuvent avoir un texte identique).
+class _StepField {
+  _StepField(String text) : controller = TextEditingController(text: text);
+
+  final Key key = UniqueKey();
+  final TextEditingController controller;
+}
+
 class _EntryEditorSheetState extends ConsumerState<_EntryEditorSheet> {
   late final TextEditingController _titleController;
   late final TextEditingController _competenceController;
@@ -84,7 +94,7 @@ class _EntryEditorSheetState extends ConsumerState<_EntryEditorSheet> {
   late final TextEditingController _differenciationController;
   late final TextEditingController _newStepController;
   late final TextEditingController _newMaterielController;
-  late List<String> _steps;
+  late List<_StepField> _steps;
   late List<String> _materiel;
   late String _status;
   Set<String> _selectedNotions = {};
@@ -103,7 +113,7 @@ class _EntryEditorSheetState extends ConsumerState<_EntryEditorSheet> {
     _differenciationController = TextEditingController(text: e?.differenciation ?? '');
     _newStepController = TextEditingController();
     _newMaterielController = TextEditingController();
-    _steps = List.of(e?.deroulementSteps ?? const []);
+    _steps = [for (final t in e?.deroulementSteps ?? const <String>[]) _StepField(t)];
     _materiel = List.of(e?.materiel ?? const []);
     _status = e?.status ?? 'prevue';
     _loadNotions();
@@ -134,6 +144,9 @@ class _EntryEditorSheetState extends ConsumerState<_EntryEditorSheet> {
     _competenceController.dispose();
     _objectiveController.dispose();
     _differenciationController.dispose();
+    for (final step in _steps) {
+      step.controller.dispose();
+    }
     _newStepController.dispose();
     _newMaterielController.dispose();
     super.dispose();
@@ -160,7 +173,7 @@ class _EntryEditorSheetState extends ConsumerState<_EntryEditorSheet> {
           title: _titleController.text.trim().isEmpty ? null : _titleController.text.trim(),
           competenceBo: _competenceController.text.trim().isEmpty ? null : _competenceController.text.trim(),
           objective: _objectiveController.text.trim().isEmpty ? null : _objectiveController.text.trim(),
-          steps: _steps,
+          steps: _stepTexts,
           differenciation:
               _differenciationController.text.trim().isEmpty ? null : _differenciationController.text.trim(),
           materiel: _materiel,
@@ -175,7 +188,7 @@ class _EntryEditorSheetState extends ConsumerState<_EntryEditorSheet> {
           title: _titleController.text.trim().isEmpty ? null : _titleController.text.trim(),
           competenceBo: _competenceController.text.trim().isEmpty ? null : _competenceController.text.trim(),
           objective: _objectiveController.text.trim().isEmpty ? null : _objectiveController.text.trim(),
-          steps: _steps,
+          steps: _stepTexts,
           differenciation:
               _differenciationController.text.trim().isEmpty ? null : _differenciationController.text.trim(),
           materiel: _materiel,
@@ -231,13 +244,28 @@ class _EntryEditorSheetState extends ConsumerState<_EntryEditorSheet> {
     }
   }
 
+  /// Textes des étapes dans l'ordre affiché ; une étape vidée est ignorée
+  /// plutôt qu'enregistrée comme ligne blanche.
+  List<String> get _stepTexts => [
+        for (final step in _steps)
+          if (step.controller.text.trim().isNotEmpty) step.controller.text.trim(),
+      ];
+
   void _addStep() {
     final text = _newStepController.text.trim();
     if (text.isEmpty) return;
     setState(() {
-      _steps.add(text);
+      _steps.add(_StepField(text));
       _newStepController.clear();
     });
+  }
+
+  void _removeStep(int index) {
+    setState(() => _steps.removeAt(index).controller.dispose());
+  }
+
+  void _moveStep(int oldIndex, int newIndex) {
+    setState(() => _steps.insert(newIndex, _steps.removeAt(oldIndex)));
   }
 
   void _addMateriel() {
@@ -292,20 +320,67 @@ class _EntryEditorSheetState extends ConsumerState<_EntryEditorSheet> {
             const SizedBox(height: 16),
             Text('Déroulement', style: Theme.of(context).textTheme.labelLarge),
             const SizedBox(height: 4),
-            ..._steps.asMap().entries.map((e) => Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Row(
-                    children: [
-                      Text('${e.key + 1}.', style: Theme.of(context).textTheme.bodySmall),
-                      const SizedBox(width: 8),
-                      Expanded(child: Text(e.value)),
-                      IconButton(
-                        icon: const Icon(Icons.close, size: 18),
-                        onPressed: () => setState(() => _steps.removeAt(e.key)),
-                      ),
-                    ],
+            // Chaque étape est un champ modifiable sur place ; la poignée à
+            // gauche la déplace. La liste ne défile pas elle-même (c'est la
+            // feuille qui défile) : `primary: false` lui évite de s'accrocher
+            // au ScrollController principal, ce que font par défaut les listes
+            // verticales sur les plateformes de bureau (Windows).
+            ReorderableListView(
+              shrinkWrap: true,
+              primary: false,
+              physics: const NeverScrollableScrollPhysics(),
+              buildDefaultDragHandles: false,
+              // Une étape en cours de saisie garde sa poignée de sélection et
+              // son clavier pendant qu'on la glisse : Flutter lève alors une
+              // assertion (LeaderLayer/FollowerLayer) quand le champ passe dans
+              // la couche de glissement. On retire le focus avant.
+              onReorderStart: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+              onReorderItem: _moveStep,
+              children: [
+                for (var i = 0; i < _steps.length; i++)
+                  Padding(
+                    key: _steps[i].key,
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ReorderableDragStartListener(
+                          index: i,
+                          child: const Padding(
+                            padding: EdgeInsets.only(top: 12, right: 4),
+                            child: Icon(Icons.drag_indicator, size: 22),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 24,
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: 14),
+                            child: Text('${i + 1}.', style: Theme.of(context).textTheme.bodySmall),
+                          ),
+                        ),
+                        Expanded(
+                          child: TextField(
+                            controller: _steps[i].controller,
+                            minLines: 1,
+                            maxLines: null,
+                            keyboardType: TextInputType.multiline,
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              border: OutlineInputBorder(),
+                              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Supprimer cette étape',
+                          icon: const Icon(Icons.close, size: 18),
+                          onPressed: () => _removeStep(i),
+                        ),
+                      ],
+                    ),
                   ),
-                )),
+              ],
+            ),
             Row(
               children: [
                 Expanded(
